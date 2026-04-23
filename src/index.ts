@@ -31,12 +31,13 @@ app.get('/', (req: Request, res: Response) => {
       ingestEvent:     'POST /api/event',
       getEvent:        'GET  /api/event/:sequenceId',
       getMissionEvents:'GET  /api/events/mission/:missionId',
-      spores:          'GET  /api/spores?mission_id=<id>',
+      sporesList:      'GET  /api/spores?mission_id=<id>',
+      sporeDetail:     'GET  /api/spores/:artifactId?mission_id=<id>',
     },
   });
 });
 
-// Error middleware must be registered after routes
+// Error middleware must be after route registration
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({
@@ -49,7 +50,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 async function startServer() {
   try {
     const redis = initRedis({
-      host:     process.env.REDIS_HOST || 'localhost',
+      host:     process.env.REDIS_HOST     || 'localhost',
       port:     parseInt(process.env.REDIS_PORT || '6379', 10),
       db:       parseInt(process.env.REDIS_DB   || '0',    10),
       password: process.env.REDIS_PASSWORD || undefined,
@@ -65,9 +66,10 @@ async function startServer() {
 
     app.listen(PORT, () => {
       console.log(`✓ GlyphicSpore backend listening on port ${PORT}`);
-      console.log(`✓ API:          http://localhost:${PORT}/`);
+      console.log(`✓ API root:     http://localhost:${PORT}/`);
       console.log(`✓ Health:       http://localhost:${PORT}/api/health`);
-      console.log(`✓ Spores:       http://localhost:${PORT}/api/spores?mission_id=TriumvirateSwarm`);
+      console.log(`✓ Spores list:  http://localhost:${PORT}/api/spores?mission_id=TriumvirateSwarm`);
+      console.log(`✓ Spore detail: http://localhost:${PORT}/api/spores/<artifactId>?mission_id=TriumvirateSwarm`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

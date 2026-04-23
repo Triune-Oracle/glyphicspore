@@ -1,4 +1,4 @@
-# GlyphicSpore v1+ Backend
+# GlyphicSpore
 
 **Neo4j graph visualization layer for TriumvirateSwarm**
 
@@ -6,35 +6,34 @@ Part of the TSCP (Triune Swarm Coordination Protocol) ecosystem.
 
 ## Overview
 
-GlyphicSpore is the structural visualization layer that transforms Partyline events into a queryable Neo4j graph. It provides:
+GlyphicSpore transforms Partyline events into a queryable Neo4j graph and exposes a lineage viewer UI.
 
 - **Event Ingestion** — Accepts Partyline events via REST API
-- **Graph Mutation** — Automatically updates Neo4j based on event type
-- **Query Interface** — Exposes Neo4j queries for pattern discovery and visualization
+- **Graph Mutation** — Writes actor, provenance, and causal edges on every ingest
+- **Lineage Viewer** — React frontend renders artifact provenance as an interactive node graph
 
 ## Architecture
 
 ```
 Partyline (Redis Streams)
     ↓
-Event Ingestion API (POST /api/event)
+Event Ingestion API (POST /api/event)   [backend, port 3001]
     ↓
-EventIngestionService (validation + storage)
+Neo4j Graph  (Agent, Artifact, Event, Decision, Checkpoint, Error)
     ↓
-Neo4j Graph (nodes: Agent, Artifact, Event, Pattern, Decision, Checkpoint, Error)
+Lineage API  (GET /api/spores/:artifactId/lineage)
     ↓
-GlyphicSpore UI (React + Three.js + D3)
+Lineage Viewer UI  [frontend, port 3000]
 ```
 
 ## Prerequisites
 
 - **Node.js** 18+
-- **Neo4j** 5.0+ (running locally or remote)
-- **Redis** (optional, for future Partyline subscription)
+- **Neo4j** 5.0+
+- **Redis**
+- **Docker** (for one-command local setup)
 
 ## Local Development (one command)
-
-Requires [Docker](https://docs.docker.com/get-docker/) for automatic Neo4j + Redis startup.
 
 ```bash
 chmod +x dev-up.sh
@@ -43,13 +42,14 @@ chmod +x dev-up.sh
 
 What it does:
 
-1. Copies `.env.example` → `.env` (if no `.env` exists)
-2. Runs `npm install` (only if `node_modules` is absent)
-3. Starts Neo4j + Redis via `docker-compose.yml` and waits for them to be healthy
-4. Launches the backend with `npm run dev` (hot-reload on port 3001)
-5. Stops containers on exit (Ctrl-C)
+1. Copies `.env.example` → `.env` (if absent)
+2. Installs backend and frontend npm dependencies
+3. Starts Neo4j + Redis via `docker-compose.yml`, waits for healthchecks
+4. Launches the frontend (`npm run dev` in `frontend/`) on port 3000
+5. Launches the backend (`npm run dev`) on port 3001
+6. Stops both servers and containers on Ctrl-C
 
-**Keep infrastructure running across backend restarts:**
+**Keep infrastructure running across restarts:**
 
 ```bash
 ./dev-up.sh --keep-services
@@ -58,17 +58,15 @@ What it does:
 **Tear down containers manually:**
 
 ```bash
-# Docker Compose v2
-docker compose down
-
-# Docker Compose v1
-docker-compose down
+docker compose down      # Compose v2
+docker-compose down      # Compose v1
 ```
 
 **URLs once running:**
 
 | Service | URL |
 |---------|-----|
+| Lineage viewer (frontend) | http://localhost:3000 |
 | Backend API | http://localhost:3001 |
 | Neo4j browser | http://localhost:7474 |
 
@@ -76,41 +74,55 @@ docker-compose down
 
 Graph edges (`PERFORMED`, `CHILD_OF`, `PRODUCED`) are written correctly for all new ingests.
 
-Records written before this write path was implemented may remain as disconnected nodes with no edges. This is known historical debt and does not affect new data.
-
-To inspect or repair older records, use the opt-in backfill utility:
+Records written before this write path was implemented may remain as disconnected nodes. Use the opt-in backfill utility to repair them:
 
 ```bash
-# Inspect only — no writes
-npm run backfill:edges
-
-# Inspect scoped to one mission
-npm run backfill:edges -- --mission-id TriumvirateSwarm
-
-# Apply repairs (writes MERGE-safe edges)
-npm run backfill:edges -- --apply
-
-# Apply scoped to one mission
-npm run backfill:edges -- --mission-id TriumvirateSwarm --apply
+npm run backfill:edges                              # dry-run (default)
+npm run backfill:edges -- --mission-id X            # dry-run, scoped
+npm run backfill:edges -- --apply                   # live writes
+npm run backfill:edges -- --mission-id X --apply    # live writes, scoped
 ```
 
-The script is idempotent and reports unresolved records it cannot repair by inference.
+Idempotent. Reports unresolved records it cannot repair by inference.
+
+## Frontend
+
+The lineage viewer lives in `frontend/` (Vite + React + React Flow).
+
+```bash
+cd frontend
+npm install
+npm run dev     # http://localhost:3000
+```
+
+Requires the backend running on port 3001. The Vite dev server proxies `/api/*` to `http://localhost:3001` automatically — no CORS configuration needed.
+
+To use: enter an artifact ID and mission ID, click **Fetch lineage**. The graph renders artifact ← event chain ← agents with typed node colours and edge labels.
+
+## Backend
+
+```bash
+npm install
+npm run dev     # http://localhost:3001
+```
 
 ## Installation
 
 ```bash
+# Backend
 npm install
+
+# Frontend
+cd frontend && npm install
 ```
 
 ## Configuration
-
-Copy `.env.example` to `.env` and configure:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your Neo4j credentials:
+Edit `.env`:
 
 ```
 NEO4J_URI=bolt://localhost:7687
@@ -120,57 +132,20 @@ PORT=3001
 MISSION_ID=TriumvirateSwarm
 ```
 
-## Development
-
-Start the development server with hot reload:
-
-```bash
-npm run dev
-```
-
-The server will start on `http://localhost:3001`.
-
-## Building
-
-Compile TypeScript to JavaScript:
-
-```bash
-npm run build
-```
-
-## Production
-
-Start the production server:
-
-```bash
-npm start
-```
-
 ## API Endpoints
 
-### Health Check
+### Health
 
 ```
 GET /api/health
 ```
 
-Response:
-```json
-{
-  "status": "ok",
-  "service": "glyphicspore-backend",
-  "timestamp": "2026-04-23T00:00:00.000Z",
-  "checks": { "api": "ok", "neo4j": "ok", "redis": "ok" }
-}
-```
-
-Returns `503` with `"status": "degraded"` if any dependency is unreachable.
+Live dependency check. Returns `503` with per-check breakdown if any dependency is unreachable.
 
 ### Ingest Event
 
 ```
 POST /api/event
-Content-Type: application/json
 ```
 
 ### Spores — list
@@ -179,15 +154,11 @@ Content-Type: application/json
 GET /api/spores?mission_id=<missionId>
 ```
 
-Returns all Artifacts for a mission aggregated with event count, agent count, and last activity timestamp.
-
 ### Spores — detail
 
 ```
 GET /api/spores/:artifactId?mission_id=<missionId>
 ```
-
-Returns a single Artifact with its producing Event chain and contributing Agents.
 
 ### Spores — lineage graph
 
@@ -195,7 +166,7 @@ Returns a single Artifact with its producing Event chain and contributing Agents
 GET /api/spores/:artifactId/lineage?mission_id=<missionId>
 ```
 
-Returns `{ nodes, edges }` suitable for direct consumption by graph visualization libraries (Cytoscape, React Flow, etc.).
+Returns `{ nodes, edges }` for graph visualization.
 
 Node id format: `artifact:<id>` | `event:<sequenceId>` | `agent:<agentId>`
 
@@ -203,18 +174,12 @@ Edge types: `PERFORMED` | `PRODUCED` | `CHILD_OF`
 
 ## Graph Schema
 
-Key node types:
-- **Agent** — Swarm participants
-- **Artifact** — Outputs (files, metrics, decisions)
-- **Event** — Partyline events
-- **Decision** — Decision points
-- **Checkpoint** — Saved states
-- **Error** — Error states
+Node labels: `Agent`, `Artifact`, `Event`, `Decision`, `Checkpoint`, `Error`
 
-Key relationship types:
-- **(Agent)-[:PERFORMED]->(Event)** — actor lineage
-- **(Event)-[:PRODUCED]->(Artifact)** — provenance
-- **(Event)-[:CHILD_OF]->(Event)** — causal sequencing
+Relationships:
+- `(Agent)-[:PERFORMED]->(Event)` — actor lineage
+- `(Event)-[:PRODUCED]->(Artifact)` — provenance
+- `(Event)-[:CHILD_OF]->(Event)` — causal sequencing
 
 ## Testing
 
@@ -223,8 +188,6 @@ npm test
 ```
 
 ## Deployment
-
-### Docker
 
 ```dockerfile
 FROM node:18-alpine
@@ -235,16 +198,10 @@ COPY dist ./dist
 CMD ["node", "dist/index.js"]
 ```
 
-```bash
-docker build -t glyphicspore-backend .
-docker run -p 3001:3001 --env-file .env glyphicspore-backend
-```
-
 ## Documentation
 
 - **TSCP-SPEC Section 3** — Partyline Protocol & Event Schema
 - **graph-schema.cypher** — Neo4j schema definition
-- **TSL v1 Grammar** — Swarm language specification
 
 ## License
 
@@ -255,7 +212,3 @@ Apache 2.0
 This project is governed by **TSCP-GOV::TriumvirateSwarm::v1**.
 
 All commits must be tagged: `[GOV: TSCP-GOV::TriumvirateSwarm::v1]`
-
-## Support
-
-For questions or issues, refer to the TriumvirateSwarm documentation or contact the maintainers.

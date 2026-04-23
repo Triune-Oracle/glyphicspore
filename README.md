@@ -32,6 +32,46 @@ GlyphicSpore UI (React + Three.js + D3)
 - **Neo4j** 5.0+ (running locally or remote)
 - **Redis** (optional, for future Partyline subscription)
 
+## Local Development (one command)
+
+Requires [Docker](https://docs.docker.com/get-docker/) for automatic Neo4j + Redis startup.
+
+```bash
+chmod +x dev-up.sh
+./dev-up.sh
+```
+
+What it does:
+
+1. Copies `.env.example` → `.env` (if no `.env` exists)
+2. Runs `npm install` (only if `node_modules` is absent)
+3. Starts Neo4j + Redis via `docker-compose.yml` and waits for them to be healthy
+4. Launches the backend with `npm run dev` (hot-reload on port 3001)
+5. Stops containers on exit (Ctrl-C)
+
+**Keep infrastructure running across backend restarts:**
+
+```bash
+./dev-up.sh --keep-services
+```
+
+**Tear down containers manually:**
+
+```bash
+# Docker Compose v2
+docker compose down
+
+# Docker Compose v1
+docker-compose down
+```
+
+**URLs once running:**
+
+| Service | URL |
+|---------|-----|
+| Backend API | http://localhost:3001 |
+| Neo4j browser | http://localhost:7474 |
+
 ## Installation
 
 ```bash

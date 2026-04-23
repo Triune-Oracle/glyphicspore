@@ -31,9 +31,9 @@ app.get('/', (req: Request, res: Response) => {
       ingestEvent:     'POST /api/event',
       getEvent:        'GET  /api/event/:sequenceId',
       getMissionEvents:'GET  /api/events/mission/:missionId',
-      sporesList:      'GET  /api/spores?mission_id=<id>',
-      sporeDetail:     'GET  /api/spores/:artifactId?mission_id=<id>',
-      sporeLineage:    'GET  /api/spores/:artifactId/lineage?mission_id=<id>',
+      sporesList:      'GET  /api/spores?mission_id=<missionId>',
+      sporeDetail:     'GET  /api/spores/:artifactId?mission_id=<missionId>',
+      sporeLineage:    'GET  /api/spores/:artifactId/lineage?mission_id=<missionId>',
     },
   });
 });

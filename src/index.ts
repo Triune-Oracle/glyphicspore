@@ -33,6 +33,7 @@ app.get('/', (req: Request, res: Response) => {
       getMissionEvents:'GET  /api/events/mission/:missionId',
       sporesList:      'GET  /api/spores?mission_id=<id>',
       sporeDetail:     'GET  /api/spores/:artifactId?mission_id=<id>',
+      sporeLineage:    'GET  /api/spores/:artifactId/lineage?mission_id=<id>',
     },
   });
 });
@@ -66,10 +67,11 @@ async function startServer() {
 
     app.listen(PORT, () => {
       console.log(`✓ GlyphicSpore backend listening on port ${PORT}`);
-      console.log(`✓ API root:     http://localhost:${PORT}/`);
-      console.log(`✓ Health:       http://localhost:${PORT}/api/health`);
-      console.log(`✓ Spores list:  http://localhost:${PORT}/api/spores?mission_id=TriumvirateSwarm`);
-      console.log(`✓ Spore detail: http://localhost:${PORT}/api/spores/<artifactId>?mission_id=TriumvirateSwarm`);
+      console.log(`✓ API root:      http://localhost:${PORT}/`);
+      console.log(`✓ Health:        http://localhost:${PORT}/api/health`);
+      console.log(`✓ Spores list:   http://localhost:${PORT}/api/spores?mission_id=TriumvirateSwarm`);
+      console.log(`✓ Spore detail:  http://localhost:${PORT}/api/spores/<artifactId>?mission_id=TriumvirateSwarm`);
+      console.log(`✓ Spore lineage: http://localhost:${PORT}/api/spores/<artifactId>/lineage?mission_id=TriumvirateSwarm`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

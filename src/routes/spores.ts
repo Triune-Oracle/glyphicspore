@@ -28,6 +28,25 @@ interface SporeDetailRow {
   agentId: string | null;
 }
 
+interface LineageRow {
+  artifactId: string;
+  eventSeqId: number | null;
+  eventType: string | null;
+  agentId: string | null;
+  parentSeqId: number | null;
+}
+
+interface GraphNode {
+  id: string;
+  type: 'artifact' | 'event' | 'agent';
+}
+
+interface GraphEdge {
+  from: string;
+  to: string;
+  type: 'PERFORMED' | 'PRODUCED' | 'CHILD_OF';
+}
+
 /**
  * GET /api/spores?mission_id=<id>
  *
@@ -81,15 +100,111 @@ router.get('/spores', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/spores/:artifactId/lineage?mission_id=<id>
+ *
+ * Graph-native lineage view: nodes and edges ready for Cytoscape,
+ * React Flow, or any graph visualization library.
+ *
+ * Registered before /:artifactId to prevent Express param shadowing.
+ */
+router.get('/spores/:artifactId/lineage', async (req: Request, res: Response) => {
+  const { artifactId } = req.params;
+  const { mission_id } = req.query;
+
+  if (!mission_id || typeof mission_id !== 'string') {
+    return res.status(400).json({
+      success: false,
+      error: 'mission_id query parameter is required',
+    });
+  }
+
+  try {
+    const rows = await getNeo4j().query<LineageRow>(
+      `
+      MATCH (art:Artifact {artifact_id: $artifactId, mission_id: $missionId})
+      OPTIONAL MATCH (evt:Event)-[:PRODUCED]->(art)
+      OPTIONAL MATCH (ag:Agent)-[:PERFORMED]->(evt)
+      OPTIONAL MATCH (evt)-[:CHILD_OF]->(parent:Event)
+      RETURN
+        art.artifact_id    AS artifactId,
+        evt.sequence_id    AS eventSeqId,
+        evt.event_type     AS eventType,
+        ag.agent_id        AS agentId,
+        parent.sequence_id AS parentSeqId
+      `,
+      { artifactId, missionId: mission_id }
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Artifact not found',
+      });
+    }
+
+    const nodesMap = new Map<string, GraphNode>();
+    const edgeKeys = new Set<string>();
+    const edges: GraphEdge[] = [];
+
+    const addNode = (id: string, type: GraphNode['type']) => {
+      if (!nodesMap.has(id)) nodesMap.set(id, { id, type });
+    };
+    const addEdge = (from: string, to: string, type: GraphEdge['type']) => {
+      const key = `${from}|${to}|${type}`;
+      if (!edgeKeys.has(key)) {
+        edgeKeys.add(key);
+        edges.push({ from, to, type });
+      }
+    };
+
+    const artNodeId = `artifact:${artifactId}`;
+    addNode(artNodeId, 'artifact');
+
+    for (const row of rows) {
+      const evtSeqId   = row.eventSeqId  != null ? Number(row.eventSeqId)  : null;
+      const parentSeqId = row.parentSeqId != null ? Number(row.parentSeqId) : null;
+
+      if (evtSeqId != null) {
+        const evtId = `event:${evtSeqId}`;
+        addNode(evtId, 'event');
+        addEdge(evtId, artNodeId, 'PRODUCED');
+
+        if (row.agentId != null) {
+          const agentId = `agent:${row.agentId}`;
+          addNode(agentId, 'agent');
+          addEdge(agentId, evtId, 'PERFORMED');
+        }
+
+        if (parentSeqId != null) {
+          const parentId = `event:${parentSeqId}`;
+          addNode(parentId, 'event');
+          addEdge(evtId, parentId, 'CHILD_OF');
+        }
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      artifactId,
+      missionId: mission_id,
+      nodes: [...nodesMap.values()],
+      edges,
+    });
+  } catch (error) {
+    console.error('Spore lineage query error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+/**
  * GET /api/spores/:artifactId?mission_id=<id>
  *
  * Detail projection: single Artifact with its full producing Event chain
  * (one-hop parent lineage) and every contributing Agent.
- *
- * mission_id is required because artifact_id is unique per mission, not globally.
- *
- * Returns flat rows from Neo4j and aggregates in TypeScript to avoid
- * complex nested COLLECT Cypher.
  */
 router.get('/spores/:artifactId', async (req: Request, res: Response) => {
   const { artifactId } = req.params;
@@ -133,8 +248,6 @@ router.get('/spores/:artifactId', async (req: Request, res: Response) => {
       });
     }
 
-    // Aggregate flat rows into structured response.
-    // eventSeqId/agentId can be null when no events have been produced yet.
     const first = rows[0];
     const eventsMap = new Map<number, {
       sequenceId: number;

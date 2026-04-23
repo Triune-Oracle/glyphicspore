@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FRONTEND_DIR="$ROOT_DIR/frontend"
 
 # Parse flags
 KEEP_SERVICES=false
@@ -10,7 +11,7 @@ for arg in "$@"; do
     --keep-services) KEEP_SERVICES=true ;;
     --help)
       echo "Usage: ./dev-up.sh [--keep-services]"
-      echo "  --keep-services  Leave Neo4j/Redis containers running when the backend exits."
+      echo "  --keep-services  Leave Neo4j/Redis containers running when servers exit."
       exit 0
       ;;
   esac
@@ -25,10 +26,17 @@ if [ ! -f "$ROOT_DIR/.env" ]; then
   echo "  .env created — edit NEO4J_PASSWORD / REDIS_PASSWORD if your setup differs."
 fi
 
-# ---------- node dependencies ----------
+# ---------- backend dependencies ----------
 if [ ! -d "$ROOT_DIR/node_modules" ]; then
-  echo "  Installing npm dependencies..."
+  echo "  Installing backend dependencies..."
   cd "$ROOT_DIR"
+  npm install
+fi
+
+# ---------- frontend dependencies ----------
+if [ -d "$FRONTEND_DIR" ] && [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+  echo "  Installing frontend dependencies..."
+  cd "$FRONTEND_DIR"
   npm install
 fi
 
@@ -63,7 +71,6 @@ wait_for_port() {
 if [ -n "$DOCKER_COMPOSE_CMD" ]; then
   echo "  Starting Neo4j + Redis via Docker Compose..."
   if [ "$DOCKER_COMPOSE_SUPPORTS_WAIT" = true ]; then
-    # --wait blocks until all healthchecks pass (Docker Compose v2.1.1+)
     $DOCKER_COMPOSE_CMD -f "$ROOT_DIR/docker-compose.yml" up -d --wait
     echo "  All services healthy."
   else
@@ -76,13 +83,17 @@ else
   echo "  WARNING: Docker not found."
   echo "  Ensure Neo4j  is reachable at bolt://localhost:7687"
   echo "  Ensure Redis  is reachable at localhost:6379"
-  echo "  before the server starts."
   echo
 fi
 
-# ---------- dev server ----------
+# ---------- cleanup ----------
+FRONTEND_PID=""
+
 cleanup() {
   echo
+  if [ -n "$FRONTEND_PID" ]; then
+    kill "$FRONTEND_PID" 2>/dev/null || true
+  fi
   if [ "$KEEP_SERVICES" = false ] && [ -n "$DOCKER_COMPOSE_CMD" ]; then
     echo "  Stopping infrastructure containers..."
     $DOCKER_COMPOSE_CMD -f "$ROOT_DIR/docker-compose.yml" stop
@@ -93,9 +104,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# ---------- frontend ----------
+if [ -d "$FRONTEND_DIR" ]; then
+  echo "  Launching frontend (port 3000)..."
+  cd "$FRONTEND_DIR"
+  npm run dev &
+  FRONTEND_PID=$!
+fi
+
+# ---------- backend ----------
 echo
-echo "  GlyphicSpore backend starting on http://localhost:3001"
-echo "  Neo4j browser:  http://localhost:7474"
+echo "  GlyphicSpore starting."
+echo "  Frontend:   http://localhost:3000"
+echo "  Backend:    http://localhost:3001"
+echo "  Neo4j:      http://localhost:7474"
 echo
 cd "$ROOT_DIR"
 npm run dev

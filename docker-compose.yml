@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  neo4j:
+    image: neo4j:5
+    ports:
+      - '7474:7474'   # Neo4j browser
+      - '7687:7687'   # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/password
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:7474']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  neo4j_data:
+  redis_data:

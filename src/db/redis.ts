@@ -22,9 +22,6 @@ export class RedisConnection {
     this.config = RedisConfigSchema.parse(config);
   }
 
-  /**
-   * Initialize the Redis client
-   */
   async connect(): Promise<void> {
     try {
       this.client = new Redis({
@@ -38,7 +35,6 @@ export class RedisConnection {
         },
       });
 
-      // Test connectivity
       await this.client.ping();
       console.log('✓ Redis connection verified');
     } catch (error) {
@@ -47,9 +43,6 @@ export class RedisConnection {
     }
   }
 
-  /**
-   * Close the Redis client
-   */
   async disconnect(): Promise<void> {
     if (this.client) {
       await this.client.quit();
@@ -58,48 +51,39 @@ export class RedisConnection {
     }
   }
 
-  /**
-   * Get next sequence ID for a mission using atomic INCR
-   * Key pattern: partyline:seq:{mission_id}
-   */
+  /** Live round-trip probe — throws if Redis is unreachable. */
+  async ping(): Promise<void> {
+    if (!this.client) {
+      throw new Error('Redis client not initialized. Call connect() first.');
+    }
+    await this.client.ping();
+  }
+
   async getNextSequenceId(missionId: string): Promise<number> {
     if (!this.client) {
       throw new Error('Redis client not initialized. Call connect() first.');
     }
-
     const key = `partyline:seq:${missionId}`;
-    const nextId = await this.client.incr(key);
-    return nextId;
+    return this.client.incr(key);
   }
 
-  /**
-   * Get current sequence ID for a mission (without incrementing)
-   */
   async getCurrentSequenceId(missionId: string): Promise<number> {
     if (!this.client) {
       throw new Error('Redis client not initialized. Call connect() first.');
     }
-
     const key = `partyline:seq:${missionId}`;
     const currentId = await this.client.get(key);
     return currentId ? parseInt(currentId, 10) : 0;
   }
 
-  /**
-   * Reset sequence ID for a mission (admin operation)
-   */
   async resetSequenceId(missionId: string): Promise<void> {
     if (!this.client) {
       throw new Error('Redis client not initialized. Call connect() first.');
     }
-
     const key = `partyline:seq:${missionId}`;
     await this.client.del(key);
   }
 
-  /**
-   * Check if client is connected
-   */
   isConnected(): boolean {
     return this.client !== null && this.client.status === 'ready';
   }

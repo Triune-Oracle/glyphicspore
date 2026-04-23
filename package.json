@@ -9,7 +9,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "backfill:edges": "tsx scripts/backfill-edges.ts"
   },
   "keywords": [
     "tscp",

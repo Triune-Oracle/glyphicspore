@@ -1,27 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { EventIngestionService } from '../services/eventIngestion';
 import { EventIngestionRequestSchema } from '../types/partyline';
+import { getNeo4j } from '../db/neo4j';
+import { getRedis } from '../db/redis';
 import { z } from 'zod';
 
 const router = Router();
 const eventService = new EventIngestionService();
 
-/**
- * POST /event
- * Ingest a new Partyline event into GlyphicSpore
- *
- * Request body: Partyline event (without timestamp and sequence_id)
- * Response: Complete event with generated timestamp and sequence_id
- */
 router.post('/event', async (req: Request, res: Response) => {
   try {
-    // Validate request body
     const eventRequest = EventIngestionRequestSchema.parse(req.body);
-
-    // Ingest event
     const event = await eventService.ingestEvent(eventRequest);
-
-    // Return success response
     res.status(201).json({
       success: true,
       event,
@@ -35,7 +25,6 @@ router.post('/event', async (req: Request, res: Response) => {
         details: error.errors,
       });
     }
-
     console.error('Event ingestion error:', error);
     res.status(500).json({
       success: false,
@@ -45,22 +34,12 @@ router.post('/event', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * GET /event/:sequenceId
- * Retrieve a specific event by sequence ID
- */
 router.get('/event/:sequenceId', async (req: Request, res: Response) => {
   try {
     const sequenceId = parseInt(req.params.sequenceId, 10);
-
     if (isNaN(sequenceId)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid sequence ID',
-      });
+      return res.status(400).json({ success: false, error: 'Invalid sequence ID' });
     }
-
-    // TODO: Implement event retrieval from Neo4j
     res.status(501).json({
       success: false,
       error: 'Not implemented',
@@ -68,22 +47,12 @@ router.get('/event/:sequenceId', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Event retrieval error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
-/**
- * GET /events/mission/:missionId
- * Retrieve all events for a specific mission
- */
 router.get('/events/mission/:missionId', async (req: Request, res: Response) => {
   try {
-    const { missionId } = req.params;
-
-    // TODO: Implement mission events retrieval from Neo4j
     res.status(501).json({
       success: false,
       error: 'Not implemented',
@@ -91,23 +60,39 @@ router.get('/events/mission/:missionId', async (req: Request, res: Response) => 
     });
   } catch (error) {
     console.error('Mission events retrieval error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
 /**
  * GET /health
- * Health check endpoint
+ * Live dependency check. Returns 503 if any dependency is unreachable.
  */
-router.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    success: true,
-    status: 'healthy',
+router.get('/health', async (req: Request, res: Response) => {
+  const checks: Record<string, 'ok' | 'fail'> = {
+    api: 'ok',
+    neo4j: 'ok',
+    redis: 'ok',
+  };
+
+  try {
+    await getNeo4j().query('RETURN 1');
+  } catch {
+    checks.neo4j = 'fail';
+  }
+
+  try {
+    await getRedis().ping();
+  } catch {
+    checks.redis = 'fail';
+  }
+
+  const allOk = Object.values(checks).every((v) => v === 'ok');
+  res.status(allOk ? 200 : 503).json({
+    status: allOk ? 'ok' : 'degraded',
     service: 'glyphicspore-backend',
     timestamp: new Date().toISOString(),
+    checks,
   });
 });
 
